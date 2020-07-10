@@ -1,0 +1,6 @@
+project_name: infrared  # also the folder name of the dataset that under data_path folder
+train_set: train
+val_set: val
+num_gpus: 1
+
+obj_list: ['Person', 'Car']

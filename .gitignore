@@ -1,0 +1,8 @@
+#默认忽略空文件夹
+#忽略根目录下的weights文件夹里的所有文件 然后变成空文件夹了也就默认不上传文件夹了
+# /weights/
+#忽略根目录下的weights文件夹里的所有以.weights结尾的文件 不包括文件夹
+/weights/*.weights
+#忽略任意路径下的__pychche__文件夹和所有以.pyc结尾的文件
+__pychche__
+*.pyc
