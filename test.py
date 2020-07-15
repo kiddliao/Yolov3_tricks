@@ -19,8 +19,8 @@ def get_args():
     parser = argparse.ArgumentParser('yolov3 detector test')
     parser.add_argument('-p', '--project', type=str, default='flir', help='config file in /project/*yml')
     parser.add_argument('-n', '--num_workers', type=int, default=0, help='the num_workers of dataloader')
-    parser.add_argument('--batch_size', type=int, default=2, help='the batch_size of dataloader')
-    parser.add_argument('--data_path', type=str, default=os.path.join('..', '..', 'REMOTE', 'datasets', 'coco_flir'))
+    parser.add_argument('--batch_size', type=int, default=16, help='the batch_size of dataloader')
+    parser.add_argument('--data_path', type=str, default=os.path.join('..', 'datasets', 'coco_flir'))
     parser.add_argument('--load_weights',
                         type=str,
                         default=os.path.join('weights', 'flir_yolov3_65_18.weights'),

@@ -38,8 +38,6 @@ class DetectionLayer(nn.Module):
     def forward(self, x, targets=None, input_dim=416, anchors=[], num_classes=80):
         # gpu
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
-        LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
-        ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
 
         self.input_dim = input_dim
         self.num_classes = num_classes
@@ -79,16 +77,16 @@ class DetectionLayer(nn.Module):
                 pred_cls.view(num_samples, -1, self.num_classes)),
             2)  #输出(n,3*grid_size*grid_size,(4+1+80)*3=255)
 
-        if targets == None:  # 没传标签 就是训练
+        if type(targets) != torch.Tensor:  # 没传标签 就是训练
             return no_loss_prediction, 0, 0
         else:
             final_predictions = torch.cat(  #保留位置信息计算损失 计算损失需要未转换的框向量
                 (prediction[..., :4].view(num_samples, self.num_anchors, grid_size, grid_size,
                                           4), pred_conf.view(num_samples, self.num_anchors, grid_size, grid_size, 1),
-                 pred_cls.view(num_samples, self.num_anchors, grid_size, grid_size, self.num_classes)), -1)
+                 pred_cls.view(num_samples, self.num_anchors, grid_size, grid_size, self.num_classes)), -1).requires_grad_()
             #生成预设框
             #anchor_boxes.shape=(n,num_anchors,grid_size,grid_size,4) anchor_boxes[0,1,i,j,:]是第一张图片的坐标为(i,j)的网格的第2个预设框向量
-            anchor_boxes = FloatTensor(prediction[..., :4].shape[1:])
+            anchor_boxes = FloatTensor(prediction[..., :4].shape[1:]).requires_grad_()
             #anchor_boxes是xcycwh的格式
             anchor_boxes[..., 0] = FloatTensor(prediction[..., 0].shape[1:]).fill_(0.5) + self.grid_x
             anchor_boxes[..., 1] = FloatTensor(prediction[..., 1].shape[1:]).fill_(0.5) + self.grid_y
@@ -308,20 +306,20 @@ class Darknet(nn.Module):
         fp.close()
 
 
-if __name__ == '__main__':
-    a = Darknet('cfg\\flir_yolov3.cfg')
-    a.load_darknet_weights('weights\\flir_yolov3_65_18.weights')
-    # a.save_darknet_weights('weights\\test.weights')
-    training_set = DIYDataset('D:\\Ubuntu_Server_Share\\REMOTE\\datasets\\coco_flir\\coco',
-                              'train',
-                              mean_std_path=None,
-                              cal_mean_std=False,
-                              transform=transforms.Compose([Normalizer(), Augmenter(),
-                                                            Resizer(416)]))
-    training_params = {'batch_size': 4, 'shuffle': True, 'drop_last': True, 'collate_fn': collater, 'num_workers': 0}
-    training_generator = DataLoader(training_set, **training_params)
-    for i, data in enumerate(training_generator):
-        imgs = data['img']
-        img_ids = data['img_id']
-        targets = data['annot']
-        a.forward(imgs, targets)
+# if __name__ == '__main__':
+#     a = Darknet('cfg\\flir_yolov3.cfg')
+#     a.load_darknet_weights('weights\\flir_yolov3_65_18.weights')
+#     # a.save_darknet_weights('weights\\test.weights')
+#     training_set = DIYDataset('D:\\Ubuntu_Server_Share\\REMOTE\\datasets\\coco_flir\\coco',
+#                               'train',
+#                               mean_std_path=None,
+#                               cal_mean_std=False,
+#                               transform=transforms.Compose([Normalizer(), Augmenter(),
+#                                                             Resizer(416)]))
+#     training_params = {'batch_size': 4, 'shuffle': True, 'drop_last': True, 'collate_fn': collater, 'num_workers': 0}
+#     training_generator = DataLoader(training_set, **training_params)
+#     for i, data in enumerate(training_generator):
+#         imgs = data['img']
+#         img_ids = data['img_id']
+#         targets = data['annot']
+#         a.forward(imgs, targets)

@@ -30,10 +30,10 @@ def get_args():
                         help='suggest using adamw until the very final stage then switch to sgd')
     parser.add_argument('--num_epochs', type=int, default=500)
     parser.add_argument('--val_interval', type=int, default=1, help="'intervals of calculate val_datasets' mAP")
-    parser.add_argument('--save_interval', type=int, default=100, help='number of steps between saving')
-    parser.add_argument('--data_path', type=str, default=os.path.join('..', '..', 'REMOTE', 'datasets', 'coco_flir'))
+    parser.add_argument('--save_interval', type=int, default=1107, help='number of steps between saving')
+    parser.add_argument('--data_path', type=str, default=os.path.join('..', 'datasets', 'coco_flir'))
     parser.add_argument('--log_path', type=str, default='logs', help='tensorboardX log')
-    parser.add_argument('--load_weights', type=str, default=os.path.join('weights','flir_yolov3_65_18.weights'), help='pretrained models or recover training')
+    parser.add_argument('--load_weights', type=str, default='weights/flir_yolov3_65_18.weights', help='pretrained models or recover training')
     parser.add_argument('--train_from_scratch',
                         type=bool,
                         default=True,
@@ -103,7 +103,7 @@ def train(opt):
     model = Darknet(cfg_path=params['cfg_path'])
 
     #预训练或者恢复训练
-    if opt.load_weights is not None:
+    if opt.load_weights:
         weights_path = opt.load_weights
         if opt.train_from_scratch is True:  #重新训练
             last_step = 0
@@ -120,7 +120,7 @@ def train(opt):
     else:
         last_step = 0
         print('新的训练,随机初始化网络')
-        init_weights(model)
+        init_weights(model)#还没写
 
     if opt.head_only: #有点问题 没有解决怎么不冻结分类层和定位层
         def freeze_backbone(m):
@@ -155,74 +155,78 @@ def train(opt):
     writer = SummaryWriter(os.path.join(opt.log_path,f'{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}'))
 
     num_iter_per_epoch = len(train_generator)
-
-    for epoch in range(opt.num_epochs):
-        last_epoch = step // num_iter_per_epoch
-        if epoch < last_epoch:
-            continue
-        epoch_loss = []
-        progress_bar = tqdm(train_generator)
-        for iter, data in enumerate(progress_bar):
-            if iter < step - last_epoch * num_iter_per_epoch
-            progress_bar.update()
-            continue
-            imgs, annots = data['img'], data['annot']
-            if params['num_gpus'] > 0:
-                imgs = imgs.cuda()
-                annot = annot.cuda()
-
-            optimizer.zero_grad()
-            x, cls_loss, reg_loss = model(imgs, annots)
-            loss = cls_loss + reg_loss
-            if loss == 0 or not torch.isfinite(loss):
+    try:
+        for epoch in range(opt.num_epochs):
+            last_epoch = step // num_iter_per_epoch
+            if epoch < last_epoch:
                 continue
-            loss.backward()
-            optimizer.step()
-            epoch_loss.append(float(loss))
-            progress_bar.set_description(
-                        'Step: {}. Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Total loss: {:.5f}'.format(
-                            step, epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(),
-                            reg_loss.item(), loss.item()))
-            writer.add_scalars('Loss', {'train': loss}, step)
-            writer.add_scalars('Regression_loss', {'train': reg_loss}, step)
-            writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
+            epoch_loss = []
+            progress_bar = tqdm(train_generator)
+            for iter, data in enumerate(progress_bar):
+                if iter < step - last_epoch * num_iter_per_epoch:
+                    progress_bar.update()
+                    continue
+                imgs, annots = data['img'].requires_grad_(), data['annot'].requires_grad_()
+                if params['num_gpus'] > 0:
+                    imgs = imgs.cuda()
+                    annots = annots.cuda()
 
-            current_lr = optimizer.param_groups[0]['lr']
-            writer.add_scalar('learning_rate', current_lr, step)
-            step += 1
-            if step % opt.save_interval == 0 and step > 0:
-                model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_{epoch}_{step}.weights'))
-                print(f'保存模型' + f'{opt.project}_yolov3_{epoch}_{step}.weights'))
-        scheduler_warmup_step.step()
-        #训练集的损失每个batch更新一次 验证集的损失每个epoch更新一次
-        if epoch % opt.val_interval == 0:
-            model.eval()
-            val_cls_losses = []
-            val_reg_losses = []
-            for iter, data in enumerate(val_generator):
-                with torch.no_grad():
-                    imgs, annots = data['img'], data['annot']
-                    if params['num_gpus'] > 0:
-                        imgs = imgs.cuda()
-                        annot = annot.cuda()
-                    x, cls_loss, reg_loss = model(imgs, annots)
+                optimizer.zero_grad()
+                x, cls_loss, reg_loss = model(imgs, annots)
+                loss = cls_loss + reg_loss
+                if loss.item == 0 or not torch.isfinite(loss):
+                    continue
+                loss.backward()
+                optimizer.step()
+                epoch_loss.append(float(loss))
+                progress_bar.set_description(
+                            'Step: {}. Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Total loss: {:.5f}'.format(
+                                step, epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(),
+                                reg_loss.item(), loss.item()))
+                writer.add_scalars('Loss', {'train': loss}, step)
+                writer.add_scalars('Regression_loss', {'train': reg_loss}, step)
+                writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
 
-                    loss = cls_loss + reg_loss
-                    if loss == 0 or not torch.isfinite(loss):
-                        continue
-                    val_cls_losses.append(cls_loss.item())
-                    val_reg_losses.append(reg_loss.item())
-            cls_loss = torch.stack(val_cls_losses).mean()
-            reg_loss = torch.stack(val_reg_losses).mean()
-            loss = cls_loss + reg_loss
-            print('Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
-                        epoch, opt.num_epochs, cls_loss, reg_loss, loss))
-            writer.add_scalars('Loss', {'val': loss}, step)
-            writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
-            writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
+                current_lr = optimizer.param_groups[0]['lr']
+                writer.add_scalar('learning_rate', current_lr, step)
+                step += 1
+                if step % opt.save_interval == 0 and step > 0:
+                    model.save_darknet_weights(os.path.join(opt.saved_path, '{}_yolov3_{}_{}.weights'.format(opt.project,epoch,step)))
+                    print('保存模型'+'{}_yolov3_{}_{}.weights'.format(opt.project,epoch,step))
+            scheduler_warmup_step.step()
+            #训练集的损失每个batch更新一次 验证集的损失每个epoch更新一次
+            if epoch % opt.val_interval == 0:
+                model.eval()
+                val_cls_losses = []
+                val_reg_losses = []
+                for iter, data in enumerate(val_generator):
+                    with torch.no_grad():
+                        imgs, annots = data['img'], data['annot']
+                        if params['num_gpus'] > 0:
+                            imgs = imgs.cuda()
+                            annot = annot.cuda()
+                        x, cls_loss, reg_loss = model(imgs, annots)
 
-            model.train()
-        model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_{epoch}_{step}_final.weights'))
+                        loss = cls_loss + reg_loss
+                        if loss == 0 or not torch.isfinite(loss):
+                            continue
+                        val_cls_losses.append(cls_loss.item())
+                        val_reg_losses.append(reg_loss.item())
+                cls_loss = torch.stack(val_cls_losses).mean()
+                reg_loss = torch.stack(val_reg_losses).mean()
+                loss = cls_loss + reg_loss
+                print('Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
+                            epoch, opt.num_epochs, cls_loss, reg_loss, loss))
+                writer.add_scalars('Loss', {'val': loss}, step)
+                writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
+                writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
+
+                model.train()
+        model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_final_{epoch}_{step}.weights'))
+    except KeyboardInterrupt as e:
+        print('暂停训练')
+        model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_backup_{epoch}_{step}.weights'))
+        print('模型保存成功')
     writer.close()
 
 

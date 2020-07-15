@@ -1,5 +1,7 @@
-project_name: infrared # also the folder name of the dataset that under data_path folder
+project_name: infrared
 train_set: train
 val_set: val
+test_set: val
 num_gpus: 1
 obj_list: ["Person", "Car"]
+cfg_path: cfg/infrared_yolov3.cfg

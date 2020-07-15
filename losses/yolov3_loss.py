@@ -31,6 +31,7 @@ class YOLOV3Loss(nn.Module):
         classifictions, regressions = predictions[..., 5:], predictions[..., :5]
         anchors = anchors.view(-1, 4)
         dtype = anchors.dtype
+        FloatTensor = torch.cuda.FloatTensor if predictions.is_cuda else torch.FloatTensor
 
         for i in range(batch_size):
             classification, regression = classifictions[i, :, :], regressions[i, :, :]
@@ -47,12 +48,8 @@ class YOLOV3Loss(nn.Module):
             bbox_annotation[:, 1] = bbox_annotation[:, 1] + bbox_annotation[:, 3] / 2
 
             if bbox_annotation.shape[0] == 0:
-                if torch.cuda.is_available():
-                    regression_losses.append(torch.tensor(0).to(dtype).cuda())
-                    classification_losses.append(torch.tensor(0).to(dtype).cuda())
-                else:
-                    regression_losses.append(torch.tensor(0).to(dtype))
-                    classification_losses.append(torch.tensor(0).to(dtype))
+                regression_losses.append(FloatTensor([0.]))
+                classification_losses.append(FloatTensor([0.]))
                 continue
             # yolov3损失只计算正样本的损失项 怎么找到正样本呢
             # 1 找到与每个网格的3个anchor框iou最大也就是最匹配的gt框 即为每个网格的每个anchor框分配一个gt框
@@ -64,7 +61,7 @@ class YOLOV3Loss(nn.Module):
 
             # 计算分类损失
             # 找到每个anchor对应的gt框的id后 得到每个anchor框对应的gt框预测向量
-            gt_classification = torch.Tensor(classification.shape).fill_(0)
+            gt_classification = FloatTensor(classification.shape).fill_(0).requires_grad_()
             # iou大于阈值的认为有正样本
             positive_indices = ious_max.ge(iou_thresh)
             num_positive_anchors = positive_indices.sum()
@@ -81,24 +78,19 @@ class YOLOV3Loss(nn.Module):
             bce = -(gt_classification[positive_indices, :] * torch.log(classification[positive_indices, :]) +
                     (1. - gt_classification[positive_indices, :]) * torch.log(1. - classification[positive_indices, :]))
             cls_loss = bce.sum() / torch.clamp(num_positive_anchors, min=1)
-            if torch.cuda.is_available():
-                classification_losses.append(cls_loss.to(dtype).cuda())
-            else:
-                classification_losses.append(cls_loss.to(dtype))
+            classification_losses.append(FloatTensor([cls_loss]).requires_grad_())
+
 
             # 计算定位损失
             if positive_indices.sum() <= 0:
-                if torch.cuda.is_available():
-                    regression_losses.append(torch.tensor(0).to(dtype).cuda())
-                else:
-                    regression_losses.append(torch.tensor(0).to(dtype))
+                regression_losses.append(FloatTensor([0.]))
             else:
                 gt_ctr_x = assigned_annotations[positive_indices, 0]
                 gt_ctr_y = assigned_annotations[positive_indices, 1]
                 gt_w = torch.clamp(assigned_annotations[positive_indices, 2], min=1)
                 gt_h = torch.clamp(assigned_annotations[positive_indices, 3], min=1)
                 #gt框没有置信度 正样本的置信度设为1
-                gt_conf = torch.Tensor(gt_ctr_x.shape).fill_(1.)
+                gt_conf = FloatTensor(gt_ctr_x.shape).fill_(1.).requires_grad_()
 
                 tx = regression[positive_indices, 0]
                 ty = regression[positive_indices, 1]
@@ -134,11 +126,8 @@ class YOLOV3Loss(nn.Module):
                 reg_loss = reg_x_loss + reg_y_loss + reg_w_loss + reg_h_loss + reg_conf_loss
                 reg_loss = (reg_loss.sum()) / torch.clamp(num_positive_anchors, min=1)
 
-                if torch.cuda.is_available():
-                    regression_losses.append(reg_loss.to(dtype).cuda())
-                else:
-                    regression_losses.append(reg_loss.to(dtype))
+                regression_losses.append(FloatTensor([reg_loss]).requires_grad_())
 
-        return torch.stack(classification_losses).mean(dim=0,
-                                                       keepdim=True), torch.stack(regression_losses).mean(dim=0,
-                                                                                                          keepdim=True)
+
+        return FloatTensor(classification_losses).mean(dim=0,keepdim=True).requires_grad_(), FloatTensor(regression_losses).mean(dim=0,
+                                                                                                          keepdim=True).requires_grad_()

@@ -117,6 +117,7 @@ def NMS(img_ids, predictions, conf_thresh=0.5, iou_thresh=0.5, style='OR', type=
                 coco_pred_sample['score'] = num_result[-1]
                 coco_pred_sample['bbox'] = num_result[:4]
                 yolo_results.append(coco_pred_sample.copy())
+    return yolo_results
 
 
 def NMS_core(prediction, conf_thresh=0.5, iou_thresh=0.5, style='OR', type='IoU'):

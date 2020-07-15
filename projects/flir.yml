@@ -1,7 +1,7 @@
-project_name: coco # also the folder name of the dataset that under data_path folder
+project_name: coco
 train_set: train
 val_set: val
 test_set: val
-num_gpus: 0
+num_gpus: 1
 obj_list: ["person", "bicycle", "car"]
 cfg_path: cfg/flir_yolov3.cfg
