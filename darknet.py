@@ -28,24 +28,14 @@ class DetectionLayer(nn.Module):
         g = self.grid_size
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
         self.stride = self.input_dim / self.grid_size  #对比输入图片 特征图的一个像素对应原图的几个像素
-        self.grid_x = torch.arange(g).repeat(g, 1).t().view([1, 1, g, g]).type(
-            FloatTensor)  #网格的序号 (1,1,13,13)
-        self.grid_y = torch.arange(g).repeat(g, 1).view([1, 1, g, g]).type(
-            FloatTensor)  #(1,1,13,13)
-        self.scaled_anchors = FloatTensor([
-            (a_w / self.stride, a_h / self.stride) for a_w, a_h in self.anchors
-        ])  #anchor框对应原图的像素/特征图对应原图几个像素=anchor框对应特征图几个像素
-        self.anchor_w = self.scaled_anchors[:, 0:1].view(
-            (1, self.num_anchors, 1, 1))  #(1,3,1,1)
-        self.anchor_h = self.scaled_anchors[:, 1:2].view(
-            (1, self.num_anchors, 1, 1))  #(1,3,1,1)
+        self.grid_x = torch.arange(g).repeat(g, 1).t().view([1, 1, g, g]).type(FloatTensor)  #网格的序号 (1,1,13,13)
+        self.grid_y = torch.arange(g).repeat(g, 1).view([1, 1, g, g]).type(FloatTensor)  #(1,1,13,13)
+        self.scaled_anchors = FloatTensor([(a_w / self.stride, a_h / self.stride)
+                                           for a_w, a_h in self.anchors])  #anchor框对应原图的像素/特征图对应原图几个像素=anchor框对应特征图几个像素
+        self.anchor_w = self.scaled_anchors[:, 0:1].view((1, self.num_anchors, 1, 1))  #(1,3,1,1)
+        self.anchor_h = self.scaled_anchors[:, 1:2].view((1, self.num_anchors, 1, 1))  #(1,3,1,1)
 
-    def forward(self,
-                x,
-                targets=None,
-                input_dim=416,
-                anchors=[],
-                num_classes=80):
+    def forward(self, x, targets=None, input_dim=416, anchors=[], num_classes=80):
         # gpu
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
         LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
@@ -56,9 +46,8 @@ class DetectionLayer(nn.Module):
         num_samples = x.size(0)  #图片数
         grid_size = x.size(2)  #网格大小就是特征图的宽高 每个像素都是一个网格
 
-        prediction = x.view(
-            num_samples, self.num_anchors, self.num_classes + 5, grid_size,
-            grid_size).permute(0, 1, 3, 4, 2).contiguous()  #如果不是连续内存就划分新内存存储
+        prediction = x.view(num_samples, self.num_anchors, self.num_classes + 5, grid_size,
+                            grid_size).permute(0, 1, 3, 4, 2).contiguous()  #如果不是连续内存就划分新内存存储
         #(n,num_anchors,grid_size,grid_size,num_classes+5)
         #将n张图的每张图划分为grid_size*grid_size个网格 每个网格预测num_anchors次 预测得到的向量是num_classes+5
 
@@ -82,49 +71,43 @@ class DetectionLayer(nn.Module):
         pred_boxes[..., 2] = w.data * self.anchor_w
         pred_boxes[..., 3] = h.data * self.anchor_h
 
-        predictions = torch.cat(
+        no_loss_prediction = torch.cat(
             (
-                pred_boxes.view(num_samples, -1, 4) * self.
-                stride,  #从特征图的坐标乘上stride得到原图的坐标 (n,3,grid_size,grid_size,4) to (n,3*grid_size*grid_size,4)
+                pred_boxes.view(num_samples, -1, 4) *
+                self.stride,  #从特征图的坐标乘上stride得到原图的坐标 (n,3,grid_size,grid_size,4) to (n,3*grid_size*grid_size,4)
                 pred_conf.view(num_samples, -1, 1),
                 pred_cls.view(num_samples, -1, self.num_classes)),
             2)  #输出(n,3*grid_size*grid_size,(4+1+80)*3=255)
 
         if targets == None:  # 没传标签 就是训练
-            return predictions, 0
+            return no_loss_prediction, 0, 0
         else:
-            final_predictions = torch.cat(  #保留位置信息计算损失
-                (pred_boxes.view(num_samples, self.num_anchors, grid_size,
-                                 grid_size, 4) * self.stride,
-                 pred_conf.view(num_samples, self.num_anchors, grid_size,
-                                grid_size, 1),
-                 pred_cls.view(num_samples, self.num_anchors, grid_size,
-                               grid_size, self.num_classes)), -1)
+            final_predictions = torch.cat(  #保留位置信息计算损失 计算损失需要未转换的框向量
+                (prediction[..., :4].view(num_samples, self.num_anchors, grid_size, grid_size,
+                                          4), pred_conf.view(num_samples, self.num_anchors, grid_size, grid_size, 1),
+                 pred_cls.view(num_samples, self.num_anchors, grid_size, grid_size, self.num_classes)), -1)
             #生成预设框
             #anchor_boxes.shape=(n,num_anchors,grid_size,grid_size,4) anchor_boxes[0,1,i,j,:]是第一张图片的坐标为(i,j)的网格的第2个预设框向量
             anchor_boxes = FloatTensor(prediction[..., :4].shape[1:])
-            anchor_boxes[..., 0] = FloatTensor(
-                prediction[..., 0].shape[1:]).fill_(0.) + self.grid_x
-            anchor_boxes[..., 1] = FloatTensor(
-                prediction[..., 1].shape[1:]).fill_(0.) + self.grid_y
+            #anchor_boxes是xcycwh的格式
+            anchor_boxes[..., 0] = FloatTensor(prediction[..., 0].shape[1:]).fill_(0.5) + self.grid_x
+            anchor_boxes[..., 1] = FloatTensor(prediction[..., 1].shape[1:]).fill_(0.5) + self.grid_y
             #(3,1) 2 (n,3,grid_size,grid_size)
-            anchor_boxes[..., 2] = self.scaled_anchors[:, 0:1].view(
-                self.num_anchors, 1, 1).repeat(1, grid_size, grid_size)
-            anchor_boxes[..., 3] = self.scaled_anchors[:, 1:2].view(
-                self.num_anchors, 1, 1).repeat(1, grid_size, grid_size)
+            anchor_boxes[..., 2] = self.scaled_anchors[:, 0:1].view(self.num_anchors, 1,
+                                                                    1).repeat(1, grid_size, grid_size)
+            anchor_boxes[..., 3] = self.scaled_anchors[:, 1:2].view(self.num_anchors, 1,
+                                                                    1).repeat(1, grid_size, grid_size)
             final_anchors = anchor_boxes * self.stride
-            cls_loss, reg_loss = self.criterion(final_predictions, targets,
-                                                input_dim, final_anchors,
-                                                self.num_classes,
+            cls_loss, reg_loss = self.criterion(final_predictions, targets, input_dim, final_anchors, self.num_classes,
                                                 self.num_anchors, grid_size)
+            return no_loss_prediction, cls_loss, reg_loss
 
 
 class Darknet(nn.Module):
     def __init__(self, cfg_path):
         super(Darknet, self).__init__()
         self.blocks = parse_cfg(cfg_path)
-        self.hyperparameters, self.module_list = self.create_modules(
-            self.blocks)
+        self.hyperparameters, self.module_list = self.create_modules(self.blocks)
 
     def create_modules(self, blocks):
         hyperparameters = blocks.pop(0)
@@ -149,11 +132,7 @@ class Darknet(nn.Module):
                 #yolov3中是'SAME'卷积 卷积前后特征图大小不变
                 pad = (kernel_size - 1) // 2 if padding != 0 else 0
                 #卷积块包括卷积层,BN层和激活函数
-                conv = nn.Conv2d(prev_filters,
-                                 filters,
-                                 kernel_size,
-                                 stride,
-                                 pad,
+                conv = nn.Conv2d(prev_filters, filters, kernel_size, stride, pad,
                                  bias=bias)  #(输入通道数,输出通道数,卷积核大小,步长,pad,偏移)
                 module.add_module('conv_{}'.format(i), conv)
 
@@ -162,15 +141,12 @@ class Darknet(nn.Module):
                     module.add_module('batch_norm_{}'.format(i), bn)
 
                 if activation == 'leaky':
-                    activn = nn.LeakyReLU(
-                        0.1, inplace=True
-                    )  #利用in-place计算可以节省内(显)存,同时还可以省去反复申请和释放内存的时间
+                    activn = nn.LeakyReLU(0.1, inplace=True)  #利用in-place计算可以节省内(显)存,同时还可以省去反复申请和释放内存的时间
                     module.add_module("leaky_ReLU_{}".format(i), activn)
 
             elif x['type'] == 'upsample':
                 stride = int(x['stride'])
-                upsample = nn.Upsample(scale_factor=stride,
-                                       mode='nearest')  #yolov3默认是放大2倍 最近插值法
+                upsample = nn.Upsample(scale_factor=stride, mode='nearest')  #yolov3默认是放大2倍 最近插值法
                 module.add_module('upsample_{}'.format(i), upsample)
 
             elif x['type'] == 'shortcut':
@@ -197,8 +173,7 @@ class Darknet(nn.Module):
             elif x['type'] == 'yolo':
                 mask = list(map(int, x['mask'].split(',')))
                 anchors = list(map(int, x['anchors'].split(',')))
-                anchors = [[anchors[i], anchors[i + 1]]
-                           for i in range(0, len(anchors), 2)]
+                anchors = [[anchors[i], anchors[i + 1]] for i in range(0, len(anchors), 2)]
                 anchors = [anchors[i] for i in mask]  #len(anchors)=3
 
                 detection = DetectionLayer(anchors)
@@ -210,12 +185,12 @@ class Darknet(nn.Module):
 
         return (hyperparameters, module_list)
 
-    def forward(self, x, targets=None, CUDA=False):  #targets是标签 代表需不需要计算误差
+    def forward(self, x, targets=None):  #targets是标签 代表需不需要计算误差
         modules = self.blocks
         outputs = {}  #存储每层输出的特征图
         yolo_outputs = []
-        loss = 0
-        write = 0
+        cls_losses = []
+        reg_losses = []
         for i, module in enumerate(modules):
             module_type = module['type']
             if module_type == 'convolutional' or module_type == 'upsample':  #这两种层torch有实现
@@ -239,13 +214,15 @@ class Darknet(nn.Module):
                 input_dim = int(self.hyperparameters['height'])
                 num_classes = int(module['classes'])
 
-                x, layer_loss = self.module_list[i][0](x, targets, input_dim,
-                                                       anchors, num_classes)
-                loss += layer_loss
+                x, cls_loss, reg_loss = self.module_list[i][0](x, targets, input_dim, anchors, num_classes)
+                total_loss = cls_loss + reg_loss
+                cls_losses.append(cls_loss)
+                reg_losses.append(reg_loss)
                 yolo_outputs.append(x)
             outputs[i] = x
         yolo_outputs = torch.cat(yolo_outputs, 1)
-        return yolo_outputs if targets is None else (loss, yolo_outputs)
+        return yolo_outputs if targets is None else (yolo_outputs, torch.stack(cls_losses).mean(),
+                                                     torch.stack(reg_losses).mean())
 
     def load_darknet_weights(self, weights_path):
         """用预训练模型初始化网络参数'"""
@@ -258,8 +235,7 @@ class Darknet(nn.Module):
         if ".weights" in weights_path:
             cutoff = 75
         ptr = 0
-        for i, (block, module) in enumerate(zip(self.blocks,
-                                                self.module_list)):
+        for i, (block, module) in enumerate(zip(self.blocks, self.module_list)):
             if i == cutoff:
                 break
             if block["type"] == "convolutional":
@@ -268,26 +244,22 @@ class Darknet(nn.Module):
                     bn_layer = module[1]
                     num_b = bn_layer.bias.numel()  #这层mean和std的数量
                     #获取bn的mean
-                    bn_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
-                        bn_layer.bias)
+                    bn_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.bias)
                     #初始化bn的mean
                     bn_layer.bias.data.copy_(bn_b)
                     ptr += num_b
                     #获取bn的std
-                    bn_w = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
-                        bn_layer.weight)
+                    bn_w = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.weight)
                     #初始化bn的std
                     bn_layer.weight.data.copy_(bn_w)
                     ptr += num_b
                     #获取bn的累计mean
-                    bn_rm = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
-                        bn_layer.running_mean)
+                    bn_rm = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.running_mean)
                     #初始化bn的累计mean
                     bn_layer.running_mean.data.copy_(bn_rm)
                     ptr += num_b
                     #获取bn的累计std
-                    bn_rv = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(
-                        bn_layer.running_var)
+                    bn_rv = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(bn_layer.running_var)
                     #初始化bn的累计std
                     bn_layer.running_var.data.copy_(bn_rv)
                     ptr += num_b
@@ -295,16 +267,14 @@ class Darknet(nn.Module):
                     #没有bn的卷积层是yolo层的前一个卷积层
                     num_b = conv_layer.bias.numel()
                     #获取卷积层的bias
-                    conv_b = torch.from_numpy(
-                        weights[ptr:ptr + num_b]).view_as(conv_layer.bias)
+                    conv_b = torch.from_numpy(weights[ptr:ptr + num_b]).view_as(conv_layer.bias)
                     #初始化卷积层的bias
                     conv_layer.bias.data.copy_(conv_b)
                     ptr += num_b
                 #获得卷积层的卷积权重的数量
                 num_w = conv_layer.weight.numel()
                 #获取卷积层的卷积权重
-                conv_w = torch.from_numpy(weights[ptr:ptr + num_w]).view_as(
-                    conv_layer.weight)
+                conv_w = torch.from_numpy(weights[ptr:ptr + num_w]).view_as(conv_layer.weight)
                 #初始化卷积层的卷积权重
                 conv_layer.weight.data.copy_(conv_w)
                 ptr += num_w
@@ -320,8 +290,7 @@ class Darknet(nn.Module):
         self.header_info.tofile(fp)
 
         #迭代保存每层的权重
-        for i, (block, module) in enumerate(
-                zip(self.blocks[:cutoff], self.module_list[:cutoff])):
+        for i, (block, module) in enumerate(zip(self.blocks[:cutoff], self.module_list[:cutoff])):
             if block["type"] == "convolutional":
                 conv_layer = module[0]
                 #如果有bn就把bn的参数保存在前面
@@ -339,26 +308,20 @@ class Darknet(nn.Module):
         fp.close()
 
 
-a = Darknet('cfg\\yolov3.cfg')
-a.load_darknet_weights('weights\\infrared_yolov3_91_38.weights')
-# a.save_darknet_weights('weights\\test.weights')
-training_set = DIYDataset(
-    'D:\\Ubuntu_Server_Share\\REMOTE\\datasets\\coco_flir\\coco',
-    'train',
-    mean_std_path=None,
-    cal_mean_std=False,
-    transform=transforms.Compose([Normalizer(),
-                                  Augmenter(),
-                                  Resizer(416)]))
-training_params = {
-    'batch_size': 2,
-    'shuffle': False,
-    'drop_last': True,
-    'collate_fn': collater,
-    'num_workers': 0
-}
-training_generator = DataLoader(training_set, **training_params)
-for i, data in enumerate(training_generator):
-    imgs = data['img']
-    targets = data['annot']
-    a.forward(imgs, targets)
+if __name__ == '__main__':
+    a = Darknet('cfg\\flir_yolov3.cfg')
+    a.load_darknet_weights('weights\\flir_yolov3_65_18.weights')
+    # a.save_darknet_weights('weights\\test.weights')
+    training_set = DIYDataset('D:\\Ubuntu_Server_Share\\REMOTE\\datasets\\coco_flir\\coco',
+                              'train',
+                              mean_std_path=None,
+                              cal_mean_std=False,
+                              transform=transforms.Compose([Normalizer(), Augmenter(),
+                                                            Resizer(416)]))
+    training_params = {'batch_size': 4, 'shuffle': True, 'drop_last': True, 'collate_fn': collater, 'num_workers': 0}
+    training_generator = DataLoader(training_set, **training_params)
+    for i, data in enumerate(training_generator):
+        imgs = data['img']
+        img_ids = data['img_id']
+        targets = data['annot']
+        a.forward(imgs, targets)
