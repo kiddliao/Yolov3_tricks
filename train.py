@@ -21,7 +21,7 @@ def get_args():
     parser = argparse.ArgumentParser('yolov3 detector train')
     parser.add_argument('-p', '--project', type=str, default='flir', help='config file in /project/*yml')
     parser.add_argument('-n', '--num_workers', type=int, default=0, help='the num_workers of dataloader')
-    parser.add_argument('--batch_size', type=int, default=8, help='the batch_size of dataloader')
+    parser.add_argument('--batch_size', type=int, default=6, help='the batch_size of dataloader')
     parser.add_argument('--head_only', type=bool, default=False, help='freeze all layers except classification layer')
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--optim',
@@ -30,7 +30,7 @@ def get_args():
                         help='suggest using adamw until the very final stage then switch to sgd')
     parser.add_argument('--num_epochs', type=int, default=500)
     parser.add_argument('--val_interval', type=int, default=1, help="'intervals of calculate val_datasets' mAP")
-    parser.add_argument('--save_interval', type=int, default=1107, help='number of steps between saving')
+    parser.add_argument('--save_interval', type=int, default=1477, help='number of steps between saving')
     parser.add_argument('--data_path', type=str, default=os.path.join('..', 'datasets', 'coco_flir'))
     parser.add_argument('--log_path', type=str, default='logs', help='tensorboardX log')
     parser.add_argument('--load_weights', type=str, default='weights/flir_yolov3_65_18.weights', help='pretrained models or recover training')
@@ -190,6 +190,7 @@ def train(opt):
                 current_lr = optimizer.param_groups[0]['lr']
                 writer.add_scalar('learning_rate', current_lr, step)
                 step += 1
+                torch.cuda.empty_cache()
                 if step % opt.save_interval == 0 and step > 0:
                     model.save_darknet_weights(os.path.join(opt.saved_path, '{}_yolov3_{}_{}.weights'.format(opt.project,epoch,step)))
                     print('保存模型'+'{}_yolov3_{}_{}.weights'.format(opt.project,epoch,step))
@@ -199,12 +200,14 @@ def train(opt):
                 model.eval()
                 val_cls_losses = []
                 val_reg_losses = []
-                for iter, data in enumerate(val_generator):
+                print('开始评估验证集')
+                val_bar = tqdm(val_generator)
+                for iter, data in enumerate(val_bar):
                     with torch.no_grad():
                         imgs, annots = data['img'], data['annot']
                         if params['num_gpus'] > 0:
                             imgs = imgs.cuda()
-                            annot = annot.cuda()
+                            annots = annots.cuda()
                         x, cls_loss, reg_loss = model(imgs, annots)
 
                         loss = cls_loss + reg_loss
@@ -220,7 +223,7 @@ def train(opt):
                 writer.add_scalars('Loss', {'val': loss}, step)
                 writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
                 writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
-
+                torch.cuda.empty_cache()
                 model.train()
         model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_final_{epoch}_{step}.weights'))
     except KeyboardInterrupt as e:
