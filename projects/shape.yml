@@ -1,0 +1,7 @@
+project_name: ''
+train_set: train
+val_set: val
+test_set: val
+num_gpus: 1
+obj_list: ['rectangle', 'circle']
+cfg_path: cfg/shape_yolov3.cfg

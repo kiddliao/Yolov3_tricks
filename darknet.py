@@ -8,6 +8,7 @@ from datasets.datasets import *
 from losses.yolov3_loss import *
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+import torch.nn
 
 
 class EmptyLayer(nn.Module):
@@ -71,8 +72,8 @@ class DetectionLayer(nn.Module):
 
         no_loss_prediction = torch.cat(
             (
-                pred_boxes.view(num_samples, -1, 4) *
-                self.stride,  #从特征图的坐标乘上stride得到原图的坐标 (n,3,grid_size,grid_size,4) to (n,3*grid_size*grid_size,4)
+                pred_boxes.view(num_samples, -1, 4)*self.stride,
+                #从特征图的坐标乘上stride得到原图的坐标 (n,3,grid_size,grid_size,4) to (n,3*grid_size*grid_size,4)
                 pred_conf.view(num_samples, -1, 1),
                 pred_cls.view(num_samples, -1, self.num_classes)),
             2)  #输出(n,3*grid_size*grid_size,(4+1+80)*3=255)
@@ -83,7 +84,8 @@ class DetectionLayer(nn.Module):
             final_predictions = torch.cat(  #保留位置信息计算损失 计算损失需要未转换的框向量
                 (prediction[..., :4].view(num_samples, self.num_anchors, grid_size, grid_size,
                                           4), pred_conf.view(num_samples, self.num_anchors, grid_size, grid_size, 1),
-                 pred_cls.view(num_samples, self.num_anchors, grid_size, grid_size, self.num_classes)), -1).requires_grad_()
+                 pred_cls.view(num_samples, self.num_anchors, grid_size, grid_size, self.num_classes)),
+                -1).requires_grad_()
             #生成预设框
             #anchor_boxes.shape=(n,num_anchors,grid_size,grid_size,4) anchor_boxes[0,1,i,j,:]是第一张图片的坐标为(i,j)的网格的第2个预设框向量
             anchor_boxes = FloatTensor(prediction[..., :4].shape[1:]).requires_grad_()
@@ -96,9 +98,9 @@ class DetectionLayer(nn.Module):
             anchor_boxes[..., 3] = self.scaled_anchors[:, 1:2].view(self.num_anchors, 1,
                                                                     1).repeat(1, grid_size, grid_size)
             final_anchors = anchor_boxes * self.stride
-            cls_loss, reg_loss = self.criterion(final_predictions, targets, input_dim, final_anchors, self.num_classes,
-                                                self.num_anchors, grid_size)
-            return no_loss_prediction, cls_loss, reg_loss
+            cls_loss, reg_loss, conf_loss = self.criterion(final_predictions, targets, input_dim, final_anchors,
+                                                           self.num_classes, self.num_anchors, grid_size, self.stride)
+            return no_loss_prediction, cls_loss, reg_loss, conf_loss
 
 
 class Darknet(nn.Module):
@@ -106,6 +108,8 @@ class Darknet(nn.Module):
         super(Darknet, self).__init__()
         self.blocks = parse_cfg(cfg_path)
         self.hyperparameters, self.module_list = self.create_modules(self.blocks)
+        self.header_info = np.array([0, 2, 5, 1823744, 0])
+        self.seen = self.header_info[3]
 
     def create_modules(self, blocks):
         hyperparameters = blocks.pop(0)
@@ -189,6 +193,7 @@ class Darknet(nn.Module):
         yolo_outputs = []
         cls_losses = []
         reg_losses = []
+        conf_losses = []
         for i, module in enumerate(modules):
             module_type = module['type']
             if module_type == 'convolutional' or module_type == 'upsample':  #这两种层torch有实现
@@ -211,16 +216,18 @@ class Darknet(nn.Module):
                 anchors = self.module_list[i][0].anchors
                 input_dim = int(self.hyperparameters['height'])
                 num_classes = int(module['classes'])
-
-                x, cls_loss, reg_loss = self.module_list[i][0](x, targets, input_dim, anchors, num_classes)
-                total_loss = cls_loss + reg_loss
+                x, cls_loss, reg_loss,conf_loss = self.module_list[i][0](x, targets, input_dim, anchors, num_classes)
+                total_loss = cls_loss + reg_loss + conf_loss
                 cls_losses.append(cls_loss)
                 reg_losses.append(reg_loss)
+                conf_losses.append(conf_loss)
                 yolo_outputs.append(x)
             outputs[i] = x
         yolo_outputs = torch.cat(yolo_outputs, 1)
-        return yolo_outputs if targets is None else (yolo_outputs, torch.stack(cls_losses).mean(),
-                                                     torch.stack(reg_losses).mean())
+        return yolo_outputs if targets is None else(yolo_outputs,\
+                                                    torch.stack(cls_losses).sum(dim=0,keepdim=True),\
+                                                    torch.stack(reg_losses).sum(dim=0,keepdim=True),\
+                                                    torch.stack(conf_losses).sum(dim=0,keepdim=True))
 
     def load_darknet_weights(self, weights_path):
         """用预训练模型初始化网络参数'"""
@@ -306,20 +313,20 @@ class Darknet(nn.Module):
         fp.close()
 
 
-# if __name__ == '__main__':
-#     a = Darknet('cfg\\flir_yolov3.cfg')
-#     a.load_darknet_weights('weights\\flir_yolov3_65_18.weights')
-#     # a.save_darknet_weights('weights\\test.weights')
-#     training_set = DIYDataset('D:\\Ubuntu_Server_Share\\REMOTE\\datasets\\coco_flir\\coco',
-#                               'train',
-#                               mean_std_path=None,
-#                               cal_mean_std=False,
-#                               transform=transforms.Compose([Normalizer(), Augmenter(),
-#                                                             Resizer(416)]))
-#     training_params = {'batch_size': 4, 'shuffle': True, 'drop_last': True, 'collate_fn': collater, 'num_workers': 0}
-#     training_generator = DataLoader(training_set, **training_params)
-#     for i, data in enumerate(training_generator):
-#         imgs = data['img']
-#         img_ids = data['img_id']
-#         targets = data['annot']
-#         a.forward(imgs, targets)
+if __name__ == '__main__':
+    a = Darknet('cfg/flir_yolov3.cfg')
+    a.load_darknet_weights('weights/flir_yolov3_65_18.weights')
+    # a.save_darknet_weights('weights\\test.weights')
+    training_set = DIYDataset('../datasets/coco_flir/coco',
+                              'train',
+                              mean_std_path=None,
+                              cal_mean_std=False,
+                              transform=transforms.Compose([Normalizer(), Augmenter(),
+                                                            Resizer(416)]))
+    training_params = {'batch_size': 4, 'shuffle': True, 'drop_last': True, 'collate_fn': collater, 'num_workers': 0}
+    training_generator = DataLoader(training_set, **training_params)
+    for i, data in enumerate(training_generator):
+        imgs = data['img']
+        img_ids = data['img_id']
+        targets = data['annot']
+        a.forward(imgs, targets)

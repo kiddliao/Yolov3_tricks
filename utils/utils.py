@@ -203,8 +203,22 @@ def NMS_core(prediction, conf_thresh=0.5, iou_thresh=0.5, style='OR', type='IoU'
                 det_max.append(dc.squeeze().tolist())
                 break
             det_max.append(dc[:1].squeeze().tolist())
-            iou = IOU(dc[1:], dc[0].unsqueeze_(0),  formatting='xcycwh', iou_type=type)
+            iou = IOU(dc[1:], dc[0].unsqueeze_(0), formatting='xcycwh', iou_type=type)
             dc = dc[1:]
             dc[:, 4:5] *= torch.exp(-iou**2 / sigma)  #decay confidences
-            dc = dc[(dc[:, 4] > conf_thresh).squeeze(-1)]  # new line per https://github.com/ultralytics/yolov3/issues/362
+            dc = dc[(dc[:, 4] >
+                     conf_thresh).squeeze(-1)]  # new line per https://github.com/ultralytics/yolov3/issues/362
     return det_max
+
+
+def init_weights(model):
+    modules = model.module_list
+    for name, m in modules.named_modules():
+        if isinstance(m, nn.Conv2d):
+            torch.nn.init.kaiming_uniform_(m.weight.data, 0.01, nonlinearity='leaky_relu')  #0.01参数为leaky_relu激活函数负半轴的斜率
+            #只有yolo前一层的卷积层有bias
+            if isinstance(m.bias, nn.parameter.Parameter):
+                torch.nn.init.constant_(m.bias.data, 0.0)
+        elif isinstance(m, nn.BatchNorm2d):
+            torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
+            torch.nn.init.constant_(m.bias.data, 0.0)
