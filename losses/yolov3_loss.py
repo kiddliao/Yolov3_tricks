@@ -37,8 +37,9 @@ class YOLOV3Loss(nn.Module):
         ce_criterion = torch.nn.CrossEntropyLoss(reduction='none')
 
         anchors = anchors.view(-1, 4)
-        dtype = anchors.dtype
+
         FloatTensor = torch.cuda.FloatTensor if predictions.is_cuda else torch.FloatTensor
+        device = predictions.device
 
         for i in range(batch_size):
             classification, regression = classifictions[i, :, :], regressions[i, :, :]
@@ -57,12 +58,12 @@ class YOLOV3Loss(nn.Module):
             bbox_annotation[:, 1] = bbox_annotation[:, 1] + bbox_annotation[:, 3] / 2
 
             if bbox_annotation.shape[0] == 0:
-                regression_losses.append(FloatTensor([0.]))
-                classification_losses.append(FloatTensor([0.]))
-                confidence_losses.append(FloatTensor([0.]))
+                regression_losses.append(torch.tensor(0.).to(device))
+                classification_losses.append(torch.tensor(0.).to(device))
+                confidence_losses.append(torch.tensor(0.).to(device))
                 continue
             # yolov3损失分为置信度损失 边界框损失和分类损失
-            # 边界框损失只计算正样本损失项 分类损失和置信度损失计算所有框的损失
+            # 分类损失和边界框损失只计算正样本损失项 置信度损失计算所有框的损失
             # 1 找到与每个网格的3个anchor框iou最大也就是最匹配的gt框 即为每个网格的每个anchor框分配一个gt框
             # 2 anchor框与gt框的iou>=iou_thresh的 认为该网格的该anchor框框中了物体 即有正样本
             # (num_anchors*grid_size*grid_size)
@@ -70,9 +71,10 @@ class YOLOV3Loss(nn.Module):
             # ious_max是每个anchor框对应的一堆gt框中iou最大的 ious_argmax是每个anchor框对应的最匹配的gt框的id
             ious_max, ious_argmax = ious.max(dim=1)
 
-            # 计算分类损失和置信度损失 置信度损失作者在论文使用交叉熵在代码使用mse
+            # 置信度损失 置信度损失作者在论文使用交叉熵在代码使用mse
+            # https://zhuanlan.zhihu.com/p/142408168
             # 找到每个anchor对应的gt框的id后 得到每个anchor框对应的gt框预测向量
-            gt_classification = FloatTensor(classification.shape).fill_(0)  #设置的gt框的向量不需要梯度
+
             gt_confidence = FloatTensor(confidence.shape).fill_(0)
             # iou大于阈值的认为有正样本
             positive_indices = ious_max.ge(iou_thresh)
@@ -83,41 +85,47 @@ class YOLOV3Loss(nn.Module):
             # assigned_annotations=bbox_annotation[ious_argmax[0],:]=bbox_annotation[2,:]就是第2个gt框的预测向量
             # (num_anchors*grid_size*grid_size,5)
             assigned_annotations = bbox_annotation[ious_argmax, :]
-            # yolov3使用多个二分类 bce损失
-            # 正样本的gt分类设置为1 正样本的gt其他分类设置0 负样本所有分类设置为0
-            # 分类预测向量为(num_anchors*grid_size*grid*size,num_classes)
-            # 如果使用ce loss 就相当于有num_anchors*grid_size*grid*size个多分类器
-            # 如果使用bce loss 就相当于有num_anchors*grid_size*grid*size*num_classes个二分类器
-            # 只将有正样本的网格的num_classes个二分类器中真实分类设置为1 每个正样本的预测分类相当于有num_classes-1个二分类器是0
-            # 负样本的num_classes个二分类器对应的gt值全部设置为0
-            gt_classification[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1
+
             gt_confidence[positive_indices, 0] = 1
-            # 对num_anchors*grid_size*grid*size*num_classes个二分类器计算bce
-            # 手动实现 之后focal loss好改
-            # bce_cls = -(gt_classification * torch.log(classification) +
-            #             (1. - gt_classification) * torch.log(1. - classification))
-            #接口实现 预测框在前 gt框在后 gt框不许有梯度
-            bce_cls = bce_criterion(classification, gt_classification)
-            cls_loss = bce_cls.sum()
-            classification_losses.append(FloatTensor([cls_loss]).requires_grad_())
             #降低负样本对置信度损失的影响
-            noobj = 0.5
+            # noobj = 0.5  #原文0.5
+            noobj = 0.01
             #平衡损失函数 回归的损失项比较小
             coord = 5.
             if positive_indices.sum() <= 0:
-                mse_conf_obj = FloatTensor([0.])
+                mse_conf_obj = torch.tensor(0.).to(device)
             else:
                 mse_conf_obj = mse_criterion(confidence[positive_indices, :], gt_confidence[positive_indices, :])
             mse_conf_noobj = mse_criterion(confidence[~positive_indices, :], gt_confidence[~positive_indices, :])
+            # 原论文的noobj是.5 但是由于负样本太多 对置信度损失梯度下降的过程中会导致置信度往值更小的方向去迭代 导致最后所有置信度都很小
             conf_loss = mse_conf_obj.sum() + mse_conf_noobj.sum() * noobj
-            confidence_losses.append(FloatTensor([conf_loss]).requires_grad_())
+            confidence_losses.append(conf_loss)
 
             # if positive_indices.sum() > 1:
             #     print()
-            # 计算定位损失
+            # 计算分类损失和定位损失
             if positive_indices.sum() <= 0:
-                regression_losses.append(FloatTensor([0.]))
+                regression_losses.append(torch.tensor(0.).to(device))
+                classification_losses.append(torch.tensor(0.).to(device))
             else:
+                # yolov3使用多个二分类 bce损失
+                # 正样本的gt分类设置为1 正样本的gt其他分类设置0 负样本所有分类设置为0
+                # 分类预测向量为(num_anchors*grid_size*grid*size,num_classes)
+                # 如果使用ce loss 就相当于有num_anchors*grid_size*grid*size个多分类器
+                # 如果使用bce loss 就相当于有num_anchors*grid_size*grid*size*num_classes个二分类器
+                # 只将有正样本的网格的num_classes个二分类器中真实分类设置为1 每个正样本的预测分类相当于有num_classes-1个二分类器是0
+                # 负样本的num_classes个二分类器对应的gt值全部设置为0
+                gt_classification = FloatTensor(classification.shape).fill_(0)  #设置的gt框的向量不需要梯度
+                gt_classification[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1
+                # 对有正样本的二分类器计算bce
+                # 手动实现 之后focal loss好改
+                # bce_cls = -(gt_classification * torch.log(classification) +
+                #             (1. - gt_classification) * torch.log(1. - classification))
+                #接口实现 预测框在前 gt框在后 gt框不许有梯度
+                bce_cls = bce_criterion(classification[positive_indices, :], gt_classification[positive_indices, :])
+                cls_loss = bce_cls.sum()
+                classification_losses.append(cls_loss)
+
                 gt_ctr_x = assigned_annotations[positive_indices, 0] / stride
                 gt_ctr_y = assigned_annotations[positive_indices, 1] / stride
                 #scaled_anchor_w*e^(tw)*stride预测gt_w
@@ -157,11 +165,15 @@ class YOLOV3Loss(nn.Module):
                 reg_y_loss = param * mse_criterion(sigmoid_ty, sigmoid_ty_gt)
                 reg_w_loss = param * mse_criterion(tw, tw_gt)
                 reg_h_loss = param * mse_criterion(th, th_gt)
-                reg_loss=(reg_x_loss + reg_y_loss + reg_w_loss + reg_h_loss).sum() * coord
-                y=reg_loss*2
-                y.backward()
-                regression_losses.append(FloatTensor([reg_loss]).requires_grad_())
+                reg_loss = (reg_x_loss + reg_y_loss + reg_w_loss + reg_h_loss).sum() * coord
 
-        return torch.stack(classification_losses).mean(dim=0, keepdim=True).requires_grad_(),\
-               torch.stack(regression_losses).mean(dim=0, keepdim=True).requires_grad_(),\
-               torch.stack(confidence_losses).mean(dim=0, keepdim=True).requires_grad_()
+                regression_losses.append(reg_loss)
+        #debug了两天 这里的梯度一直有问题 regression_losses这里 当正样本为0时是直接添加的tensor(0) 这里出了问题
+        #debug的时候就一个个的试 比如y=regression_losses y.backward() 报错就说明是regression_losses的问题
+        #然后顺着regression_losses往回试找到问题所在
+        #判断有没有问题的依据是1不报错2对这个张量backward()后 网络的叶子节点的梯度被计算出来 比如model.module_list[0][0].weight.grad
+        # y=torch.stack(regression_losses).mean(dim=0, keepdim=True).sum()
+        # y.backward()
+        return torch.stack(classification_losses).mean(dim=0, keepdim=True),\
+               torch.stack(regression_losses).mean(dim=0, keepdim=True),\
+               torch.stack(confidence_losses).mean(dim=0, keepdim=True)

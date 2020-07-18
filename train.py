@@ -21,7 +21,7 @@ def get_args():
     parser = argparse.ArgumentParser('yolov3 detector train')
     parser.add_argument('-p', '--project', type=str, default='shape', help='config file in /project/*yml')
     parser.add_argument('-n', '--num_workers', type=int, default=0, help='the num_workers of dataloader')
-    parser.add_argument('--batch_size', type=int, default=6, help='the batch_size of dataloader')
+    parser.add_argument('--batch_size', type=int, default=16, help='the batch_size of dataloader')
     parser.add_argument('--head_only', type=bool, default=False, help='freeze all layers except classification layer')
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--optim',
@@ -146,7 +146,7 @@ def train(opt):
         return
 
     #学习率衰减 warmup接step decay
-    scheduler_step = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 45], gamma=0.1)
+    scheduler_step = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40,45], gamma=0.1)
     scheduler_warmup_step = GradualWarmupScheduler(optimizer,
                                                    multiplier=1,
                                                    total_epoch=10,
@@ -164,82 +164,77 @@ def train(opt):
             last_epoch = step // num_iter_per_epoch
             if epoch < last_epoch:
                 continue
-            epoch_loss = []
             progress_bar = tqdm(train_generator)
             for iter, data in enumerate(progress_bar):
-                if iter < step - last_epoch * num_iter_per_epoch:
-                    progress_bar.update()
-                    continue
-                imgs, annots = data['img'].requires_grad_(), data['annot'].requires_grad_()
-                if params['num_gpus'] > 0:
-                    imgs = imgs.cuda()
-                    annots = annots.cuda()
+                # if iter < step - last_epoch * num_iter_per_epoch:
+                #     progress_bar.update()
+                #     continue
+                # imgs, annots = data['img'], data['annot']
+                # if params['num_gpus'] > 0:
+                #     imgs = imgs.cuda()
+                #     annots = annots.cuda()
 
-                optimizer.zero_grad()
-                x, cls_loss, reg_loss, conf_loss = model(imgs, annots)
-                loss = cls_loss + reg_loss + conf_loss
-                # a = torch.Tensor(cls_loss.shape).cuda().requires_grad_()
-                # b = torch.Tensor(reg_loss.shape).cuda().requires_grad_()
-                # a = cls_loss.clone()
-                # b = reg_loss.clone()
-                # loss = (3 * a + 2 * b)
-                if loss.item == 0 or not torch.isfinite(loss):
-                    continue
-                loss.backward()
-                optimizer.step()
-                epoch_loss.append(float(loss))
-                progress_bar.set_description(
-                    'Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Conf loss: {:.5f}. Total loss: {:.5f}'
-                    .format(epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(), reg_loss.item(),
-                            conf_loss.item(), loss.item()))
-                writer.add_scalars('Loss', {'train': loss}, step)
-                writer.add_scalars('Regression_loss', {'train': reg_loss}, step)
-                writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
-                writer.add_scalars('Confidence_loss', {'train': conf_loss}, step)
+                # optimizer.zero_grad()
+                # x, cls_loss, reg_loss, conf_loss = model(imgs, annots)
+                # loss = torch.cat((cls_loss, reg_loss, conf_loss)).sum()
+                # if loss.item == 0 or not torch.isfinite(loss):
+                #     continue
+                # loss.backward()
+                # optimizer.step()
+                # cls_loss = cls_loss.sum(dim=0, keepdim=True)
+                # reg_loss = reg_loss.sum(dim=0, keepdim=True)
+                # conf_loss = conf_loss.sum(dim=0, keepdim=True)
+                # progress_bar.set_description(
+                #     'Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Conf loss: {:.5f}. Total loss: {:.5f}'
+                #     .format(epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(), reg_loss.item(),
+                #             conf_loss.item(), loss.item()))
+                # writer.add_scalars('Loss', {'train': loss}, step)
+                # writer.add_scalars('Regression_loss', {'train': reg_loss}, step)
+                # writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
+                # writer.add_scalars('Confidence_loss', {'train': conf_loss}, step)
 
                 current_lr = optimizer.param_groups[0]['lr']
                 writer.add_scalar('learning_rate', current_lr, step)
                 step += 1
-
-                if step % opt.save_interval == 0 and step > 0:
-                    model.save_darknet_weights(
-                        os.path.join(opt.saved_path, '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step)))
-                    print('保存模型' + '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step))
-            scheduler_warmup_step.step()
+                # if step % opt.save_interval == 0 and step > 0:
+                #     model.save_darknet_weights(
+                #         os.path.join(opt.saved_path, '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step)))
+                #     print('保存模型' + '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step))
+            scheduler_warmup_step.step(epoch=epoch)
             # 训练集的损失每个batch更新一次 验证集的损失每个epoch更新一次
-            if epoch % opt.val_interval == 0:
-                model.eval()
-                val_cls_losses = []
-                val_reg_losses = []
-                val_conf_losses = []
-                print('开始评估验证集')
-                val_bar = tqdm(val_generator)
-                for iter, data in enumerate(val_bar):
-                    with torch.no_grad():
-                        imgs, annots = data['img'], data['annot']
-                        if params['num_gpus'] > 0:
-                            imgs = imgs.cuda()
-                            annots = annots.cuda()
-                        x, cls_loss, reg_loss, conf_loss = model(imgs, annots)
-                        val_cls_losses.append(cls_loss)
-                        val_reg_losses.append(reg_loss)
-                        val_conf_losses.append(conf_loss)
-                cls_loss = torch.stack(val_cls_losses)
-                reg_loss = torch.stack(val_reg_losses)
-                conf_loss = torch.stack(val_conf_losses)
-                cls_loss = cls_loss.mean()
-                reg_loss = reg_loss.mean()
-                conf_loss = conf_loss.mean()
-                loss = cls_loss + reg_loss + conf_loss
-                print('Val.  Cls loss: {:1.5f}. Reg loss: {:1.5f}. Conf loss: {:1.5f}. Total loss: {:1.5f}'.format(
-                    cls_loss, reg_loss, conf_loss, loss))
-                writer.add_scalars('Loss', {'val': loss}, step)
-                writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
-                writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
-                writer.add_scalars('Confidence_loss', {'val': conf_loss}, step)
-                torch.cuda.empty_cache()
-                model.train()
-        model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_final_{epoch}_{step}.weights'))
+        #     if epoch % opt.val_interval == 0:
+        #         model.eval()
+        #         val_cls_losses = []
+        #         val_reg_losses = []
+        #         val_conf_losses = []
+        #         print('开始评估验证集')
+        #         val_bar = tqdm(val_generator)
+        #         for iter, data in enumerate(val_bar):
+        #             with torch.no_grad():
+        #                 imgs, annots = data['img'], data['annot']
+        #                 if params['num_gpus'] > 0:
+        #                     imgs = imgs.cuda()
+        #                     annots = annots.cuda()
+        #                 x, cls_loss, reg_loss, conf_loss = model(imgs, annots)
+        #                 val_cls_losses.append(cls_loss)
+        #                 val_reg_losses.append(reg_loss)
+        #                 val_conf_losses.append(conf_loss)
+        #         cls_loss = torch.stack(val_cls_losses)
+        #         reg_loss = torch.stack(val_reg_losses)
+        #         conf_loss = torch.stack(val_conf_losses)
+        #         cls_loss = cls_loss.mean()
+        #         reg_loss = reg_loss.mean()
+        #         conf_loss = conf_loss.mean()
+        #         loss = cls_loss + reg_loss + conf_loss
+        #         print('Val.  Cls loss: {:1.5f}. Reg loss: {:1.5f}. Conf loss: {:1.5f}. Total loss: {:1.5f}'.format(
+        #             cls_loss, reg_loss, conf_loss, loss))
+        #         writer.add_scalars('Loss', {'val': loss}, step)
+        #         writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
+        #         writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
+        #         writer.add_scalars('Confidence_loss', {'val': conf_loss}, step)
+        #         torch.cuda.empty_cache()
+        #         model.train()
+        # model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_final_{epoch}_{step}.weights'))
     except KeyboardInterrupt as e:
         print('暂停训练')
         model.save_darknet_weights(os.path.join(opt.saved_path, f'{opt.project}_yolov3_backup_{epoch}_{step}.weights'))
