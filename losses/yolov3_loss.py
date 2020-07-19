@@ -88,8 +88,8 @@ class YOLOV3Loss(nn.Module):
 
             gt_confidence[positive_indices, 0] = 1
             #降低负样本对置信度损失的影响
-            # noobj = 0.5  #原文0.5
-            noobj = 0.01
+            # noobj = 0.5  原文0.5
+            noobj = 0.5
             #平衡损失函数 回归的损失项比较小
             coord = 5.
             if positive_indices.sum() <= 0:
@@ -97,7 +97,6 @@ class YOLOV3Loss(nn.Module):
             else:
                 mse_conf_obj = mse_criterion(confidence[positive_indices, :], gt_confidence[positive_indices, :])
             mse_conf_noobj = mse_criterion(confidence[~positive_indices, :], gt_confidence[~positive_indices, :])
-            # 原论文的noobj是.5 但是由于负样本太多 对置信度损失梯度下降的过程中会导致置信度往值更小的方向去迭代 导致最后所有置信度都很小
             conf_loss = mse_conf_obj.sum() + mse_conf_noobj.sum() * noobj
             confidence_losses.append(conf_loss)
 

@@ -1,5 +1,6 @@
 ## YOLOV3's pytorch edition with many Tricks embedded
 #### Adding my new modules on Darknet has a lot of trouble to do,then i implement a full-edition yolov3 with many tricks on Pytorch
+### 详尽的中文注释!
 ### [Open source object detection dataset of pedestrain and vehicles:FLIR](https://www.flir.com/oem/adas/adas-dataset-form/)
 ![Figure](images//readme1.jpg)
 

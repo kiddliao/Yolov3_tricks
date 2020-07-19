@@ -13,6 +13,7 @@ from tqdm.autonotebook import tqdm
 from utils.utils import *
 from darknet import Darknet
 from datasets.datasets import *
+from utils.weight_init import *
 
 
 def get_args():
