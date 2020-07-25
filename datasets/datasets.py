@@ -63,7 +63,7 @@ class DIYDataset(Dataset):
 
     def load_image(self, image_index):
         image_name = self.coco.loadImgs(self.image_ids[image_index])[0]  #loadImgs是返回一个列表 里面放的是label["images"][i]
-        image_path = os.path.join(self.path, self.set_name+'2017', image_name['file_name'])
+        image_path = os.path.join(self.path, self.set_name + '2017', image_name['file_name'])
 
         #rgb图片
         img = cv2.imread(image_path)
@@ -90,8 +90,9 @@ class DIYDataset(Dataset):
             annotations = np.append(annotations, annotation, axis=0)
 
         #[x,y,w,h](左上角坐标) to [x1,y1,x2,y2](左上角坐标和右下角坐标)
-        # annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
-        # annotations[:, 3] = annotations[:, 1] + annotations[:, 3]
+        #必须这么转换 不然水平翻转会出错
+        annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
+        annotations[:, 3] = annotations[:, 1] + annotations[:, 3]
         return annotations
 
     def coco_label_to_label(self, coco_label):
@@ -154,7 +155,10 @@ class Normalizer(object):
         image, annots = sample['img'], sample['annot']
         img_id = sample['img_id']
         return {'img': ((image.astype(np.float32) - self.mean) / self.std), 'img_id': img_id, 'annot': annots}
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 
 
 class Augmenter(object):
@@ -168,7 +172,7 @@ class Augmenter(object):
             x2 = annots[:, 2].copy()
             annots[:, 0] = w - x2
             annots[:, 2] = w - x1
-            sample = {'img': image,'img_id': img_id, 'annot': annots}
+            sample = {'img': image, 'img_id': img_id, 'annot': annots}
         return sample
 
 
@@ -198,4 +202,9 @@ class Resizer(object):
         # new_image[0:resized_height, 0:resized_width] = image
         # new_image = new_image.reshape((*(new_image.shape), 1))
         annots[:, :4] *= scale  #coco里的左上角和右下角的坐标代表距离图片左上顶点的距离 所以直接乘上scale
-        return {'img': torch.from_numpy(new_image).to(torch.float32), 'img_id': img_id, 'annot': torch.from_numpy(annots), 'scale': scale}
+        return {
+            'img': torch.from_numpy(new_image).to(torch.float32),
+            'img_id': img_id,
+            'annot': torch.from_numpy(annots),
+            'scale': scale
+        }

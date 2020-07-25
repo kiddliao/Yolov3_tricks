@@ -4,9 +4,11 @@
 #忽略根目录下的weights文件夹里的所有以.weights结尾的文件 不包括文件夹
 /weights/*.weights
 /backup/*.weights
+/backup/*.pth
 #忽略任意路径下的__pychche__文件夹和所有以.pyc结尾的文件
 __pychche__
 *.pyc
 .vscode
 logs
 *.novalocal
+

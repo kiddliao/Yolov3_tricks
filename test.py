@@ -18,27 +18,30 @@ from utils.weight_init import *
 
 def get_args():
     parser = argparse.ArgumentParser('yolov3 detector test')
-    parser.add_argument('-p', '--project', type=str, default='flir', help='config file in /project/*yml')
+    parser.add_argument('-p', '--project', type=str, default='shape', help='config file in /project/*yml')
     parser.add_argument('-n', '--num_workers', type=int, default=0, help='the num_workers of dataloader')
-    parser.add_argument('--batch_size', type=int, default=16, help='the batch_size of dataloader')
-    parser.add_argument('--data_path', type=str, default=os.path.join('..', 'datasets', 'coco_flir'))
+    parser.add_argument('--batch_size', type=int, default=8, help='the batch_size of dataloader')
+    parser.add_argument('--data_path', type=str, default=os.path.join('..', 'datasets', 'coco_shape'))
     parser.add_argument('--load_weights',
                         type=str,
-                        default=os.path.join('weights', 'flir_yolov3_65_18.weights'),
+                        default=os.path.join('backup', 'shape_yolov3_final_199_11200.pth'),
                         help='pretrained models or recover training')
     parser.add_argument('--stat_path', type=str, default='cfg', help='mean val and std val of dataset')
     parser.add_argument('--conf_thresh', type=float, default=0.5)
     parser.add_argument('--iou_thresh', type=float, default=0.5)
     parser.add_argument('--float16', type=bool, default=False)
+    parser.add_argument('--imshow_all_images', type=bool, default=True,help='imshow all pred_images with labels')
     parser.add_argument('--override', type=bool, default=True, help='override previous bbox results file if exists')
     args = parser.parse_args()
     return args
 
 
 def test(opt, params):
-    if opt.override is True and not os.path.exists('{}2017_bbox_results.json'.format(params['test_set'])):
+    if opt.override is True:
+        # if opt.override is True and not os.path.exists('{}2017_bbox_results.json'.format(params['test_set'])):
         model = Darknet(cfg_path=params['cfg_path'])
-        model.load_darknet_weights(opt.load_weights)
+        # model.load_darknet_weights(opt.load_weights)
+        model.module_list.load_state_dict(torch.load(opt.load_weights))
         print('读入模型成功!')
         model.requires_grad_(False)
         model.eval()
@@ -85,9 +88,10 @@ def test(opt, params):
                               conf_thresh=opt.conf_thresh,
                               iou_thresh=opt.iou_thresh,
                               style='OR',
-                              type='DIoU')
+                              type='IoU')
         yolo_results += pred_batch_imgs
-
+    with open('{}2017_bbox_results.json'.format(params['test_set']), 'w') as f:
+        json.dump(yolo_results, f)
     return '{}2017_bbox_results.json'.format(params['test_set'])
 
 
@@ -101,7 +105,7 @@ def _eval(coco_gt, image_ids, pred_json_path):  #image_ids是所有测试集有�
     coco_eval.summarize()
 
     for cat in coco_pred.cats.values():
-        print("{cat['name']}类的BBOX")
+        print(f"{cat['name']}类的BBOX")
         coco_eval.params.catIds = [cat['id']]
         coco_eval.params.imgIds = image_ids
         coco_eval.evaluate()

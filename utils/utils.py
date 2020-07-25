@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import os
+import cv2
 
 def parse_cfg(cfg_path):
     with open(cfg_path, 'r') as f:
@@ -48,6 +50,7 @@ def IOU(box1, box2, formatting='xcycwh', iou_type='IoU'):
     else:
         raise NameError
     # 相交面积 torch.clamp(input,min,max)
+    # 应该加个clamp保证矩形的相交面积始终在图片内 0-(h,w)
     inter_area = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(min=0) * \
                  (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(min=0)
 
@@ -108,12 +111,20 @@ def NMS(img_ids, predictions, conf_thresh=0.5, iou_thresh=0.5, style='OR', type=
         for j in range(cls_num):
             category_id = j
             cls_indice = (prediction[:, -1] == float(category_id))
-            coco_pred_sample['category_id'] = category_id
-            nms_results = NMS_core(prediction[cls_indice, :5], conf_thresh=0.5, iou_thresh=0.5, style='OR', type='IoU')
+            coco_pred_sample['category_id'] = category_id + 1  #coco里的cid是从1开始
+            nms_results = NMS_core(prediction[cls_indice, :5],
+                                   conf_thresh=conf_thresh,
+                                   iou_thresh=iou_thresh,
+                                   style='OR',
+                                   type='IoU')
             for k in range(len(nms_results)):
                 num_result = nms_results[k]
                 coco_pred_sample['score'] = num_result[-1]
-                coco_pred_sample['bbox'] = num_result[:4]
+                bbox = num_result[:4]
+                #xcycwh 2 x1y1wh
+                bbox[0] = bbox[0] - bbox[2] / 2
+                bbox[1] = bbox[1] - bbox[3] / 2
+                coco_pred_sample['bbox'] = bbox
                 yolo_results.append(coco_pred_sample.copy())
     return yolo_results
 
@@ -209,4 +220,31 @@ def NMS_core(prediction, conf_thresh=0.5, iou_thresh=0.5, style='OR', type='IoU'
     return det_max
 
 
+<<<<<<< Updated upstream
 
+=======
+def save_checkpoint(model, path):
+    # if isinstance(model, CustomDataParallel):
+    #     torch.save(model.module.model.state_dict(), path)
+    # else:
+    #     torch.save(model.model.state_dict(), path)
+    torch.save(model.module_list.state_dict(), path)
+
+
+def debug_imshow(images, annots, img_ids):
+    images = images.permute(0, 2, 3, 1)
+    images = images.numpy()
+    images *= images * 255.
+    for i in range(images.shape[0]):
+        id = img_ids[i]
+        pic = images[i]
+        annot = annots[i]
+        for j in range(annot.shape[0]):
+            bbox = annot[j]
+            if bbox[0] == -1:
+                continue
+            x1, y1, x2, y2, cid = list(map(int, bbox.tolist()))
+            cv2.rectangle(pic, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(pic, str(cid), (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 2)
+        cv2.imwrite(os.path.join('images', 'debug_imgs', '{}_debug.jpg'.format(id)), pic)
+>>>>>>> Stashed changes
