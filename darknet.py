@@ -42,7 +42,7 @@ class DetectionLayer(nn.Module):
         self.anchor_w = self.scaled_anchors[:, 0:1].view((1, self.num_anchors, 1, 1))  #(1,3,1,1)
         self.anchor_h = self.scaled_anchors[:, 1:2].view((1, self.num_anchors, 1, 1))  #(1,3,1,1)
 
-    def forward(self, x, targets=None, input_dim=416, anchors=[], num_classes=80,scales=None):
+    def forward(self, x, targets=None, input_dim=416, anchors=[], num_classes=80, scales=None):
         # gpu
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
 
@@ -85,25 +85,9 @@ class DetectionLayer(nn.Module):
             2)  #输出(n,3*grid_size*grid_size,(4+1+80)*3=255)
 
         if type(targets) != torch.Tensor:  # 没传标签 就是训练
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            return no_loss_prediction, 0, 0, 0
-        else:
-            final_predictions = torch.cat(  #保留位置信息计算损失 计算损失需要未转换的框向量
-                (prediction[..., :4].view(num_samples, self.num_anchors, grid_size, grid_size,
-                                          4), pred_conf.view(num_samples, self.num_anchors, grid_size, grid_size, 1),
-                 pred_cls.view(num_samples, self.num_anchors, grid_size, grid_size, self.num_classes)),
-                -1).requires_grad_()
-=======
             return no_loss_prediction, 0, 0, 0, 0, 0, 0
         else:
             final_predictions = torch.cat((prediction[..., :4], pred_conf.unsqueeze(-1), pred_cls), -1)
->>>>>>> Stashed changes
-=======
-            return no_loss_prediction, 0, 0, 0, 0, 0, 0
-        else:
-            final_predictions = torch.cat((prediction[..., :4], pred_conf.unsqueeze(-1), pred_cls), -1)
->>>>>>> Stashed changes
             #生成预设框
             #anchor_boxes.shape=(n,num_anchors,grid_size,grid_size,4) anchor_boxes[0,1,i,j,:]是第一张图片的坐标为(i,j)的网格的第2个预设框向量
             anchor_boxes = FloatTensor(prediction[..., :4].shape[1:])
@@ -115,27 +99,14 @@ class DetectionLayer(nn.Module):
                                                                     1).repeat(1, grid_size, grid_size)
             anchor_boxes[..., 3] = self.scaled_anchors[:, 1:2].view(self.num_anchors, 1,
                                                                     1).repeat(1, grid_size, grid_size)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            final_anchors = anchor_boxes * self.stride
-            cls_loss, reg_loss, conf_loss = self.criterion(final_predictions, targets, input_dim, final_anchors,
-                                                           self.num_classes, self.num_anchors, grid_size, self.stride)
-            return no_loss_prediction, cls_loss, reg_loss, conf_loss
-=======
-=======
->>>>>>> Stashed changes
             anchor_boxes = anchor_boxes * self.stride
             # cls_loss, reg_loss, conf_loss = self.criterion(final_predictions, targets, input_dim, final_anchors,
             #                                                self.num_classes, self.num_anchors, grid_size, self.stride)
             # return no_loss_prediction, cls_loss, reg_loss, conf_loss
             cls_loss, reg_loss_x, reg_loss_y, reg_loss_w, reg_loss_h, conf_loss = self.criterion(
                 final_predictions, targets, input_dim, anchor_boxes, self.num_classes, self.num_anchors, grid_size,
-                self.stride,scales,0.5)
+                self.stride, scales, 0.5)
             return no_loss_prediction, cls_loss, reg_loss_x, reg_loss_y, reg_loss_w, reg_loss_h, conf_loss
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
 
 class Darknet(nn.Module):
@@ -222,7 +193,7 @@ class Darknet(nn.Module):
 
         return (hyperparameters, module_list)
 
-    def forward(self, x, targets=None,scales=None):  #targets是标签 代表需不需要计算误差
+    def forward(self, x, targets=None, scales=None):  #targets是标签 代表需不需要计算误差
         modules = self.blocks
         outputs = {}  #存储每层输出的特征图
         yolo_outputs = []
@@ -235,21 +206,11 @@ class Darknet(nn.Module):
         #创建的是非叶子节点 version没变
         cls_losses = []
         conf_losses = []
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        reg_losses = []
-=======
-=======
->>>>>>> Stashed changes
         # reg_losses = []
         reg_losses_x = []
         reg_losses_y = []
         reg_losses_w = []
         reg_losses_h = []
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
         for i, module in enumerate(modules):
             module_type = module['type']
@@ -288,48 +249,20 @@ class Darknet(nn.Module):
                 anchors = self.module_list[i][0].anchors
                 input_dim = int(self.hyperparameters['height'])
                 num_classes = int(module['classes'])
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                x, cls_loss, reg_loss, conf_loss = self.module_list[i][0](x, targets, input_dim, anchors,
-                                                                          num_classes)
-                total_loss = cls_loss + reg_loss + conf_loss
-                cls_losses.append(cls_loss)
-                reg_losses.append(reg_loss)
-=======
                 x, cls_loss, reg_loss_x, reg_loss_y, reg_loss_w, reg_loss_h, conf_loss = self.module_list[i][0](
-                    x, targets, input_dim, anchors, num_classes,scales)
+                    x, targets, input_dim, anchors, num_classes, scales)
                 cls_losses.append(cls_loss)
-=======
-                x, cls_loss, reg_loss_x, reg_loss_y, reg_loss_w, reg_loss_h, conf_loss = self.module_list[i][0](
-                    x, targets, input_dim, anchors, num_classes,scales)
-                cls_losses.append(cls_loss)
->>>>>>> Stashed changes
                 reg_losses_x.append(reg_loss_x)
                 reg_losses_y.append(reg_loss_y)
                 reg_losses_w.append(reg_loss_w)
                 reg_losses_h.append(reg_loss_h)
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 conf_losses.append(conf_loss)
                 yolo_outputs.append(x)
             outputs[i] = x
         yolo_outputs = torch.cat(yolo_outputs, 1)
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        return yolo_outputs if targets is None else (yolo_outputs, torch.stack(cls_losses), torch.stack(reg_losses),
-                                                     torch.stack(conf_losses))
-=======
         return yolo_outputs if targets is None else (yolo_outputs, torch.stack(cls_losses), torch.stack(reg_losses_x),
                                                      torch.stack(reg_losses_y), torch.stack(reg_losses_w),
                                                      torch.stack(reg_losses_h), torch.stack(conf_losses))
->>>>>>> Stashed changes
-=======
-        return yolo_outputs if targets is None else (yolo_outputs, torch.stack(cls_losses), torch.stack(reg_losses_x),
-                                                     torch.stack(reg_losses_y), torch.stack(reg_losses_w),
-                                                     torch.stack(reg_losses_h), torch.stack(conf_losses))
->>>>>>> Stashed changes
 
     def load_darknet_weights(self, weights_path):
         """用预训练模型初始化网络参数'"""
@@ -415,25 +348,6 @@ class Darknet(nn.Module):
         fp.close()
 
 
-<<<<<<< Updated upstream
-if __name__ == '__main__':
-    a = Darknet('cfg/flir_yolov3.cfg')
-    a.load_darknet_weights('weights/flir_yolov3_65_18.weights')
-    # a.save_darknet_weights('weights\\test.weights')
-    training_set = DIYDataset('../datasets/coco_flir/coco',
-                              'train',
-                              mean_std_path=None,
-                              cal_mean_std=False,
-                              transform=transforms.Compose([Normalizer(), Augmenter(),
-                                                            Resizer(416)]))
-    training_params = {'batch_size': 4, 'shuffle': True, 'drop_last': True, 'collate_fn': collater, 'num_workers': 0}
-    training_generator = DataLoader(training_set, **training_params)
-    for i, data in enumerate(training_generator):
-        imgs = data['img']
-        img_ids = data['img_id']
-        targets = data['annot']
-        a.forward(imgs, targets)
-=======
 # if __name__ == '__main__':
 #     a = Darknet('cfg/flir_yolov3.cfg')
 #     a.load_darknet_weights('weights/flir_yolov3_65_18.weights')
@@ -451,4 +365,3 @@ if __name__ == '__main__':
 #         img_ids = data['img_id']
 #         targets = data['annot']
 #         a.forward(imgs, targets)
->>>>>>> Stashed changes

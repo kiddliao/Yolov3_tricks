@@ -155,13 +155,6 @@ class Normalizer(object):
         image, annots = sample['img'], sample['annot']
         img_id = sample['img_id']
         return {'img': ((image.astype(np.float32) - self.mean) / self.std), 'img_id': img_id, 'annot': annots}
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
 
 class Augmenter(object):
