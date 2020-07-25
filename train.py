@@ -31,7 +31,11 @@ def get_args():
                         default='adamw',
                         help='suggest using adamw until the very final stage then switch to sgd')
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     parser.add_argument('--num_epochs', type=int, default=50)
+=======
+    parser.add_argument('--num_epochs', type=int, default=200)
+>>>>>>> Stashed changes
 =======
     parser.add_argument('--num_epochs', type=int, default=200)
 >>>>>>> Stashed changes
@@ -96,9 +100,15 @@ def train(opt):
         mean_std_path=stat_txt_path,  #计算训练集的均值和方差
         cal_mean_std=False,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         transform=transforms.Compose([Augmenter(), Resizer(416)]))
     # transform=transforms.Compose([Normalizer(mean_std_path=stat_txt_path),
     #                               Augmenter(), Resizer(416)]))
+=======
+        # transform=transforms.Compose([Normalizer(mean_std_path=stat_txt_path),
+        #                               Augmenter(), Resizer(416)]))
+        transform=transforms.Compose([Augmenter(), Resizer(416)]))
+>>>>>>> Stashed changes
 =======
         # transform=transforms.Compose([Normalizer(mean_std_path=stat_txt_path),
         #                               Augmenter(), Resizer(416)]))
@@ -120,6 +130,9 @@ def train(opt):
                              [Normalizer(mean_std_path=stat_txt_path),
                               Augmenter(), Resizer(416)]))
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     val_generator = DataLoader(val_set, **val_params)
 
@@ -143,13 +156,19 @@ def train(opt):
     else:
         last_step = 0
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         model.apply(weights_init_normal)
         print('新的训练,高斯初始化网络')
 =======
+=======
+>>>>>>> Stashed changes
         # model.apply(weights_init_normal)
         # print('新的训练,高斯初始化网络')
         model.apply(weights_init_kaiming_uniform)
         print('新的训练,kaiming初始化网络')
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
     if opt.head_only:  #有点问题 没有解决怎么不冻结分类层和定位层
@@ -177,18 +196,24 @@ def train(opt):
 
     #学习率衰减 warmup接step decay
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     scheduler_step = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[35, 45], gamma=0.1)
     scheduler_warmup_step = GradualWarmupScheduler(optimizer,
                                                    multiplier=1,
                                                    total_epoch=10,
                                                    after_scheduler=scheduler_step)
 =======
+=======
+>>>>>>> Stashed changes
     scheduler_step = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[140, 180], gamma=0.1)
     scheduler_warmup_step = GradualWarmupScheduler(optimizer,
                                                    multiplier=1,
                                                    total_epoch=5,
                                                    after_scheduler=scheduler_step)
     # scheduler_warmup_step = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[35, 45], gamma=0.1)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
     best_epoch = 0
@@ -210,13 +235,19 @@ def train(opt):
                     continue
                 imgs, annots = data['img'], data['annot']
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
                 scales = data['scale']
                 img_ids = data['img_id']
 
                 #输出图片和标注框看看有没得问题
                 debug_imshow(imgs, annots, img_ids)
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 if params['num_gpus'] > 0:
                     imgs = imgs.cuda()
@@ -224,19 +255,26 @@ def train(opt):
 
                 optimizer.zero_grad()
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 x, cls_loss, reg_loss, conf_loss = model(imgs, annots)
                 loss = torch.cat((cls_loss, reg_loss, conf_loss)).sum()
 =======
+=======
+>>>>>>> Stashed changes
                 # x, cls_loss, reg_loss, conf_loss = model(imgs, annots)
                 # loss = torch.cat((cls_loss, reg_loss, conf_loss)).sum()
                 x, cls_loss, reg_loss_x, reg_loss_y, reg_loss_w, reg_loss_h, conf_loss = model(imgs, annots, scales)
                 # loss = torch.cat((reg_loss_x,reg_loss_y)).sum()
                 loss = torch.cat((cls_loss, reg_loss_x, reg_loss_y, reg_loss_w, reg_loss_h, conf_loss)).sum()
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 if loss.item == 0 or not torch.isfinite(loss):
                     continue
                 loss.backward()
                 optimizer.step()
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
                 cls_loss = cls_loss.sum(dim=0, keepdim=True)
                 reg_loss = reg_loss.sum(dim=0, keepdim=True)
@@ -245,6 +283,30 @@ def train(opt):
                     'Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Conf loss: {:.5f}. Total loss: {:.5f}'
                     .format(epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(), reg_loss.item(),
                             conf_loss.item(), loss.item()))
+=======
+                # cls_loss = cls_loss.sum(dim=0, keepdim=True)
+                # reg_loss = reg_loss.sum(dim=0, keepdim=True)
+                # conf_loss = conf_loss.sum(dim=0, keepdim=True)
+                # progress_bar.set_description(
+                #     'Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Conf loss: {:.5f}. Total loss: {:.5f}'
+                #     .format(epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(), reg_loss.item(),
+                #             conf_loss.item(), loss.item()))
+                # writer.add_scalars('Loss', {'train': loss}, step)
+                # writer.add_scalars('Regression_loss', {'train': reg_loss}, step)
+                # writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
+                # writer.add_scalars('Confidence_loss', {'train': conf_loss}, step)
+
+                cls_loss = cls_loss.sum(dim=0, keepdim=True)
+                reg_loss_x = reg_loss_x.sum(dim=0, keepdim=True)
+                reg_loss_y = reg_loss_y.sum(dim=0, keepdim=True)
+                reg_loss_w = reg_loss_w.sum(dim=0, keepdim=True)
+                reg_loss_h = reg_loss_h.sum(dim=0, keepdim=True)
+                conf_loss = conf_loss.sum(dim=0, keepdim=True)
+                progress_bar.set_description(
+                    'Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg_x loss: {:.5f}. Reg_y loss: {:.5f}. Reg_w loss: {:.5f}. Reg_h loss: {:.5f}. Conf loss: {:.5f}. Total loss: {:.5f}'
+                    .format(epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(), reg_loss_x.item(),
+                            reg_loss_y.item(), reg_loss_w.item(), reg_loss_h.item(), conf_loss.item(), loss.item()))
+>>>>>>> Stashed changes
 =======
                 # cls_loss = cls_loss.sum(dim=0, keepdim=True)
                 # reg_loss = reg_loss.sum(dim=0, keepdim=True)
@@ -282,16 +344,22 @@ def train(opt):
                 step += 1
                 if step % opt.save_interval == 0 and step > 0:
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                     model.save_darknet_weights(
                         os.path.join(opt.saved_path, '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step)))
                     print('保存模型' + '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step))
 =======
+=======
+>>>>>>> Stashed changes
                     # model.save_darknet_weights(
                     #     os.path.join(opt.saved_path, '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step)))
                     save_checkpoint(
                         model, os.path.join(opt.saved_path, '{}_yolov3_{}_{}.pth'.format(opt.project, epoch, step)))
                     print('保存模型' + '{}_yolov3_{}_{}.weights'.format(opt.project, epoch, step))
                 torch.cuda.empty_cache()
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             scheduler_warmup_step.step(epoch=epoch)
             # 训练集的损失每个batch更新一次 验证集的损失每个epoch更新一次
@@ -303,11 +371,14 @@ def train(opt):
 
                 val_cls_losses = []
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 val_reg_losses = []
                 val_conf_losses = []
                 print('开始评估验证集')
                 val_bar = tqdm(val_generator)
 =======
+=======
+>>>>>>> Stashed changes
                 val_reg_x_losses = []
                 val_reg_y_losses = []
                 val_reg_w_losses = []
@@ -318,6 +389,9 @@ def train(opt):
                 val_bar = tqdm(val_generator)
                 predictions = []
                 img_ids = []
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 for iter, data in enumerate(val_bar):
                     with torch.no_grad():
@@ -326,6 +400,7 @@ def train(opt):
                         if params['num_gpus'] > 0:
                             imgs = imgs.cuda()
                             annots = annots.cuda()
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
                         x, cls_loss, reg_loss, conf_loss = model(imgs, annots)
                         val_cls_losses.append(cls_loss)
@@ -341,6 +416,8 @@ def train(opt):
                 print('Val.  Cls loss: {:1.5f}. Reg loss: {:1.5f}. Conf loss: {:1.5f}. Total loss: {:1.5f}'.format(
                     cls_loss, reg_loss, conf_loss, loss))
 =======
+=======
+>>>>>>> Stashed changes
 
                         x, cls_loss, reg_loss_x, reg_loss_y, reg_loss_w, reg_loss_h, conf_loss
                         val_cls_losses.append(cls_loss)
@@ -380,6 +457,9 @@ def train(opt):
                     'Val.  Cls loss: {:1.5f}. Reg_x loss: {:1.5f}. Reg_y loss: {:1.5f}. Reg_w loss: {:1.5f}. Reg_h loss: {:1.5f}. Conf loss: {:1.5f}. Total loss: {:1.5f}'
                     .format(cls_loss, reg_loss_x.item(), reg_loss_y.item(), reg_loss_w.item(), reg_loss_h.item(),
                             conf_loss, loss))
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 writer.add_scalars('Loss', {'val': loss}, step)
                 writer.add_scalars('Regression_loss_x', {'val': reg_loss_x}, step)
@@ -389,7 +469,10 @@ def train(opt):
                 writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
                 writer.add_scalars('Confidence_loss', {'val': conf_loss}, step)
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 
                 pred_batch_imgs = NMS(img_ids,
                                       predictions,
@@ -409,6 +492,9 @@ def train(opt):
                 coco_gt = COCO(gt_json)
                 image_ids = coco_gt.getImgIds()[:MAX_IMAGES]
                 _eval(coco_gt, image_ids, pred_path)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
                 torch.cuda.empty_cache()
                 model.train()

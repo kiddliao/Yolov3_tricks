@@ -5,6 +5,10 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import cv2
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
 
 def parse_cfg(cfg_path):
     with open(cfg_path, 'r') as f:
@@ -221,8 +225,11 @@ def NMS_core(prediction, conf_thresh=0.5, iou_thresh=0.5, style='OR', type='IoU'
 
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
 =======
+=======
+>>>>>>> Stashed changes
 def save_checkpoint(model, path):
     # if isinstance(model, CustomDataParallel):
     #     torch.save(model.module.model.state_dict(), path)
@@ -247,4 +254,7 @@ def debug_imshow(images, annots, img_ids):
             cv2.rectangle(pic, (x1, y1), (x2, y2), (0, 255, 0), 2)
             cv2.putText(pic, str(cid), (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 0), 2)
         cv2.imwrite(os.path.join('images', 'debug_imgs', '{}_debug.jpg'.format(id)), pic)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
