@@ -12,7 +12,7 @@
 |Ours|77.0%|89.2%|80.1%|61.9%|
 
 ### TODO
-- [ ] Focal loss
+- [x] Focal loss
 - [ ] GIOU loss
 - [ ] CIOU loss
 - [ ] Smooth L1 loss
